@@ -1,20 +1,22 @@
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
-  creationTimestamp: null
-  name: postgres
+    name: postgres
 spec:
   replicas: 1
-  strategy: {}
+  selector:
+    matchLabels:
+      app: postgres
   template:
     metadata:
-      creationTimestamp: null
       labels:
-        service: postgres
+        app: postgres
     spec:
       containers:
       - name: postgres
-        image: postgres:9.6
-        resources: {}
+        image: postgres:latest
+        env:
+        - name: POSTGRES_PASSWORD
+          value: "password"
       restartPolicy: Always
-status: {}
+
