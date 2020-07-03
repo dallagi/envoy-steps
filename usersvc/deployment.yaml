@@ -1,20 +1,23 @@
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   creationTimestamp: null
   name: usersvc
 spec:
   replicas: 1
+  selector:
+    matchLabels:
+      app: usersvc
   strategy: {}
   template:
     metadata:
       creationTimestamp: null
       labels:
-        service: usersvc
+        app: usersvc
     spec:
       containers:
       - name: usersvc
-        image: {{REGISTRY}}usersvc:step1      
+        image: usersvc:step1
         resources: {}
       restartPolicy: Always
 status: {}

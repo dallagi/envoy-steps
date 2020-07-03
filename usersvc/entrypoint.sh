@@ -1,3 +1,3 @@
 #!/bin/sh
 
-python /application/service.py
+pipenv run python /application/service.py

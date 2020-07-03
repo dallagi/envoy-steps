@@ -1,13 +1,6 @@
 # Base our image on the latest Envoy image.
-#FROM lyft/envoy:latest
-FROM dwflynn/envoy-debug:20170501
-
-MAINTAINER Datawire <flynn@datawire.io>
-LABEL PROJECT_REPO_URL         = "git@github.com:datawire/envoy-steps.git" \
-      PROJECT_REPO_BROWSER_URL = "https://github.com/datawire/envoy-steps" \
-      DESCRIPTION              = "Simple Test User Service" \
-      VENDOR                   = "Datawire" \
-      VENDOR_URL               = "https://datawire.io/"
+FROM envoyproxy/envoy:v1.14.3
+# FROM dwflynn/envoy-debug:20170501
 
 # This Dockerfile is set up to install all the application-specific stuff into
 # /application.
@@ -18,18 +11,25 @@ LABEL PROJECT_REPO_URL         = "git@github.com:datawire/envoy-steps.git" \
 # We need curl, pip, and dnsutils (for nslookup).
 RUN apt-get update && apt-get -q install -y \
     curl \
-    python-pip \
+    python3 \
+    python3-pip \
     dnsutils
+
+RUN pip3 install pipenv
 
 # Set WORKDIR to /application which is the root of all our apps then COPY 
 # only requirements.txt to avoid screwing up Docker caching and causing a
 # full reinstall of all dependencies when dependencies are not changed.
 
+ENV LC_ALL C.UTF-8
+ENV LANG C.UTF-8
+
 WORKDIR /application
-COPY requirements.txt .
+COPY Pipfile .
+COPY Pipfile.lock .
 
 # Install application dependencies
-RUN pip install -r requirements.txt
+RUN pipenv install
 
 # COPY the app code and configuration into place, then perform any final
 # configuration steps.

@@ -3,7 +3,7 @@ kind: Service
 metadata:
   creationTimestamp: null
   labels:
-    service: usersvc
+    app: usersvc
   name: usersvc
 spec:
   type: LoadBalancer
@@ -11,5 +11,5 @@ spec:
   - name: usersvc
     port: 5000
   selector:
-    service: usersvc
+    app: usersvc
 
