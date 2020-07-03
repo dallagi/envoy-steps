@@ -7,6 +7,7 @@ verify_ssl = true
 
 [packages]
 flask = "*"
+pg8000 = "*"
 
 [requires]
 python_version = "3.5"
