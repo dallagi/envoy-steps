@@ -5,6 +5,7 @@ import os
 import pg8000
 import socket
 import sys
+import uuid
 
 from flask import Flask, jsonify, request
 
@@ -28,7 +29,7 @@ def get_db(database):
     db_host = os.environ.get("USER_DB_RESOURCE_HOST", "postgres")
     db_port = int(os.environ.get("USER_DB_RESOURCE_PORT", 5432))
 
-    return pg8000.connect(user="postgres", password="postgres",
+    return pg8000.connect(user="postgres", password="password",
                           database=database, host=db_host, port=db_port)
 
 
@@ -78,7 +79,7 @@ def params(request, *required):
 
     logging.debug("json params: {}".format(all_params))
 
-    missing = [key for key in needed if key not in incoming]
+    missing = [key for key in required if key not in all_params]
 
     if missing:
         raise Exception('Required fields missing: {}'.format(missing))
@@ -133,13 +134,12 @@ def handle_user(username):
     try:
         initialize_database_if_tables_do_not_exist()
 
-        if rc:
-            if request.method == 'POST':
-                user = create_user(request, username)
-                return enrich_response(user), 201
-            else:
-                user = get_user(request, username)
-                return enrich_response(user), 200
+        if request.method == 'POST':
+            user = create_user(request, username)
+            return enrich_response(user), 201
+        else:
+            user = get_user(request, username)
+            return enrich_response(user), 200
     except Exception as e:
         return enrich_response({'error': str(e)}), 500
 
