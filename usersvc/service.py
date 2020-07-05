@@ -4,6 +4,7 @@ import logging
 import os
 import pg8000
 import socket
+import sys
 
 from flask import Flask, jsonify, request
 
@@ -13,7 +14,7 @@ HOSTNAME = socket.gethostname()
 RESOLVED_NAME = socket.gethostbyname(socket.gethostname())
 
 logging.basicConfig(
-    filename='/tmp/flasklog',
+    stream=sys.stdout,
     level=logging.DEBUG,
     format="%(asctime)s esteps-user 0.0.1 %(levelname)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
