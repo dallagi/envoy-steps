@@ -141,6 +141,7 @@ def handle_user(username):
             user = get_user(request, username)
             return enrich_response(user), 200
     except Exception as e:
+        logging.exception("An error occoured while handling a user request")
         return enrich_response({'error': str(e)}), 500
 
 
