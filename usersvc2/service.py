@@ -2,95 +2,46 @@
 
 import logging
 import os
+import pg8000
 import socket
-import time
+import sys
 import uuid
 
-import pg8000
 from flask import Flask, jsonify, request
 
 pg8000.paramstyle = 'named'
 
-logPath = "/tmp/flasklog"
-
-MyHostName = socket.gethostname()
-MyResolvedName = socket.gethostbyname(socket.gethostname())
+HOSTNAME = socket.gethostname()
+RESOLVED_NAME = socket.gethostbyname(socket.gethostname())
 
 logging.basicConfig(
-    filename=logPath,
-    level=logging.DEBUG, # if appDebug else logging.INFO,
+    stream=sys.stdout,
+    level=logging.DEBUG,
     format="%(asctime)s esteps-user 0.0.1 %(levelname)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
 )
 
-logging.info("esteps-user initializing on %s (resolved %s)" % (MyHostName, MyResolvedName))
-
 app = Flask(__name__)
+logging.info("esteps-user initializing on %s (resolved %s)" % (HOSTNAME, RESOLVED_NAME))
 
-USER_TABLE_SQL = '''
-CREATE TABLE IF NOT EXISTS users (
-    uuid VARCHAR(64) NOT NULL PRIMARY KEY,
-    username VARCHAR(64) NOT NULL,
-    fullname VARCHAR(2048) NOT NULL,
-    password VARCHAR(256) NOT NULL
-)
-'''
-
-class RichStatus (object):
-    def __init__(self, ok, **kwargs):
-        self.ok = ok
-        self.info = kwargs
-        self.info['hostname'] = MyHostName
-        self.info['resolvedname'] = MyResolvedName
-
-    # Remember that __getattr__ is called only as a last resort if the key
-    # isn't a normal attr.
-    def __getattr__(self, key):
-        return self.info.get(key)
-
-    def __nonzero__(self):
-        return self.ok
-
-    def __str__(self):
-        attrs = ["%=%s" % (key, self.info[key]) for key in sorted(self.info.keys())]
-        astr = " ".join(attrs)
-
-        if astr:
-            astr = " " + astr
-
-        return "<RichStatus %s%s>" % ("OK" if self else "BAD", astr)
-
-    def toDict(self):
-        d = { 'ok': self.ok }
-
-        for key in self.info.keys():
-            d[key] = self.info[key]
-
-        return d
-
-    @classmethod
-    def fromError(self, error, **kwargs):
-        kwargs['error'] = error
-        return RichStatus(False, **kwargs)
-
-    @classmethod
-    def OK(self, **kwargs):
-        return RichStatus(True, **kwargs)
 
 def get_db(database):
-    db_host = "postgres"
-    db_port = 5432
+    db_host = os.environ.get("USER_DB_RESOURCE_HOST", "postgres")
+    db_port = int(os.environ.get("USER_DB_RESOURCE_PORT", 5432))
 
-    if "USER_DB_RESOURCE_HOST" in os.environ:
-        db_host = os.environ["USER_DB_RESOURCE_HOST"]
-
-    if "USER_DB_RESOURCE_PORT" in os.environ:
-        db_port = int(os.environ["USER_DB_RESOURCE_PORT"])
-
-    return pg8000.connect(user="postgres", password="postgres",
+    return pg8000.connect(user="postgres", password="password",
                           database=database, host=db_host, port=db_port)
 
-def setup():
+
+class DbInitializationError(Exception):
+    def __init__(self, message):
+        self.message = message
+
+    def __str__(self):
+        return "<DbInitializationError '{}'>".format(self.message)
+
+
+def initialize_database_if_tables_do_not_exist():
     try:
         conn = get_db("postgres")
         conn.autocommit = True
@@ -104,45 +55,38 @@ def setup():
 
         conn.close()
     except pg8000.Error as e:
-        return RichStatus.fromError("no user database in setup: %s" % e)
+        raise DbInitializationError("no user database in setup: %s" % e)
 
     try:
         conn = get_db("users")
         cursor = conn.cursor()
-        cursor.execute(USER_TABLE_SQL)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                uuid VARCHAR(64) NOT NULL PRIMARY KEY,
+                username VARCHAR(64) NOT NULL,
+                fullname VARCHAR(2048) NOT NULL,
+                password VARCHAR(256) NOT NULL
+            )
+                ''')
         conn.commit()
         conn.close()
     except pg8000.Error as e:
-        return RichStatus.fromError("no user table in setup: %s" % e)
+        raise DbInitializationError("no user table in setup: %s" % e)
 
-    return RichStatus.OK()
 
-def getIncomingJSON(req, *needed):
-    try:
-        incoming = req.get_json()
-    except Exception as e:
-        return RichStatus.fromError("invalid JSON: %s" % e)
+def params(request, *required):
+    all_params = request.get_json()
 
-    logging.debug("getIncomingJSON: %s" % incoming)
+    logging.debug("json params: {}".format(all_params))
 
-    if not incoming:
-        incoming = {}
-
-    missing = []
-
-    for key in needed:
-        if key not in incoming:
-            missing.append(key)
+    missing = [key for key in required if key not in all_params]
 
     if missing:
-        return RichStatus.fromError("Required fields missing: %s" % " ".join(missing))
-    else:
-        return RichStatus.OK(**incoming)
+        raise Exception('Required fields missing: {}'.format(missing))
+    return all_params
 
-########
-# USER CRUD
 
-def handle_user_get(req, username):
+def get_user(_request, username):
     try:
         conn = get_db("users")
         cursor = conn.cursor()
@@ -150,21 +94,19 @@ def handle_user_get(req, username):
         cursor.execute("SELECT uuid, fullname FROM users WHERE username = :username", locals())
         [ useruuid, fullname ] = cursor.fetchone()
 
-        return RichStatus.OK(uuid=useruuid, fullname=fullname)
+        return dict(uuid=useruuid, fullname=fullname)
     except pg8000.Error as e:
-        return RichStatus.fromError("%s: could not fetch info: %s" % (username, e))
+        raise Exception("{}: could not fetch info: {}".format(username, e))
 
-def handle_user_put(req, username):
+
+def create_user(request, username):
     try:
-        rc = getIncomingJSON(req, 'fullname', 'password')
+        req_params = params(request, 'fullname', 'password')
 
-        logging.debug("handle_user_put %s: got args %s" % (username, rc.toDict()))
+        logging.debug("handle_user_put {}: got args {}".format(username, req_params))
 
-        if not rc:
-            return rc
-
-        fullname = rc.fullname
-        password = rc.password
+        fullname = req_params['fullname']
+        password = req_params['password']
 
         useruuid = uuid.uuid4().hex.upper();
 
@@ -176,37 +118,38 @@ def handle_user_put(req, username):
         cursor.execute('INSERT INTO users VALUES(:useruuid, :username, :fullname, :password)', locals())
         conn.commit()
 
-        return RichStatus.OK(uuid=useruuid, fullname=fullname)
+        return dict(uuid=useruuid, fullname=fullname)
     except pg8000.Error as e:
-        return RichStatus.fromError("%s: could not save info: %s" % (username, e))
+        raise Exception("{}: could not save info: {}".format(username, e))
 
-@app.route('/user/<username>', methods=[ 'PUT', 'GET' ])
+
+def enrich_response(response):
+    return jsonify({ 'hostname': HOSTNAME, 'resolved_name': RESOLVED_NAME, **response})
+
+
+@app.route('/user/<username>', methods=['POST', 'GET'])
 def handle_user(username):
-    rc = RichStatus.fromError("impossible error")
     logging.debug("handle_user %s: method %s" % (username, request.method))
-    
+
     try:
-        rc = setup()
+        initialize_database_if_tables_do_not_exist()
 
-        if rc:
-            if request.method == 'PUT':
-                rc = handle_user_put(request, username)
-            else:
-                rc = handle_user_get(request, username)
+        if request.method == 'POST':
+            user = create_user(request, username)
+            return enrich_response(user), 201
+        else:
+            user = get_user(request, username)
+            return enrich_response(user), 200
     except Exception as e:
-        rc = RichStatus.fromError("%s: %s failed: %s" % (username, request.method, e))
+        logging.exception("An error occoured while handling a user request")
+        return enrich_response({'error': str(e)}), 500
 
-    return jsonify(rc.toDict())
 
 @app.route('/user/health')
-def root():
-    rc = RichStatus.OK(msg="user health check OK")
-
-    return jsonify(rc.toDict())
-
-def main():
-    app.run(host='0.0.0.0', port=5000, debug=True)
+def health_check():
+    return enrich_response({'msg': 'Hello World!'}), 200
 
 if __name__ == '__main__':
-    setup()
-    main()
+    initialize_database_if_tables_do_not_exist()
+    app.run(host='0.0.0.0', port=5000, debug=True)
+

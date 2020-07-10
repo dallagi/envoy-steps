@@ -3,7 +3,7 @@ kind: Service
 metadata:
   creationTimestamp: null
   labels:
-    service: usersvc
+    app: usersvc
   name: usersvc
 spec:
   type: ClusterIP
@@ -11,4 +11,4 @@ spec:
   - name: usersvc
     port: 80
   selector:
-    service: usersvc
+    app: usersvc
